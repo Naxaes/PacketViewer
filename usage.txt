@@ -1,0 +1,78 @@
+Name:
+    ted -- TCPdump's Evolved Descendant
+
+Usage:
+    ted
+    ted [-r | --rule] attributes [-a |--action] action
+    ted [-s | --show]
+    ted [-d | --delete]
+    ted [-h | --help]
+
+Description:
+    Start the program by running without any parameters. The program will disc-
+    ard all packets that doesn't match a rule, so to be able to run you have to
+    first specify at least one rule.
+
+
+    [-r | --rule] attributes [-a |--action] action
+        Describes what the rule should match against. When several attributes 
+        are applied to a rule, a match will only occur when all attributes mat-
+        ch their corresponding value. This command will append the rule to the 
+        'rules.ted' file. The action will apply to the first rule in the list 
+        that matches.
+
+        The action determines what to do when a match happens. The valid actio-
+        ns are LOG, DISCARD or ACCEPT. LOG will display the packet to the stan-
+        dard output. DISCARD and ACCEPT are used for the API and has no useful 
+        functionality from the terminal.
+
+        The valid attributes, and their formats/values, that can be passed thr-
+        ough the terminal are as follows:
+
+            ---- Attributes ----               ---- Format/value ----
+
+            --mac-source         <value>         (xx:xx:xx:xx:xx:xx)
+            --mac-destination    <value>         (xx:xx:xx:xx:xx:xx)
+            --network-protocol   <value>         (ipv4 | arp)
+            --transport-protocol <value>         (tcp  | udp)
+            --ipv4-source        <value>         (xxx.xxx.xxx.xxx)
+            --ipv4-destination   <value>         (xxx.xxx.xxx.xxx)
+            --port-source        <value>         (0 - 65535)
+            --port-destination   <value>         (0 - 65535)
+
+
+    [-s | --show]
+        Print out the current list of rules to standard output.
+
+    [-d | --delete]
+        Delete the rules list. All rules will effectively disappear, and new r-
+        ules have to created before continuing.
+
+    [-h | --help]
+        Print out this help message.
+
+Errors:
+    [ ERROR ]
+        Some value or input is erroneous.
+
+    [ ASSERTION FAILED ]
+        A logical error exist in the program source code.
+
+Note:
+    Use on your own risk. The author of the program takes no responsibility fo-
+    r any consequences that follows from using the program. This includes (but
+    is not limited to):
+
+        * The emotional damage you receive from finding out your child is visi-
+          ting sites that might harm their mental development, such as flashba-
+          ck forums.
+
+        * The lost hours of looking at protocols flying by. Missing work, study
+          and completely loosing your personal free-time.
+
+        * The inability to use other terminal programs, after having to deal w-
+          ith actual human-readable output.
+
+Author:
+    Ted Klein Bergman
+

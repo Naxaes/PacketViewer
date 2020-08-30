@@ -1,0 +1,5 @@
+.idea/
+rules.ted
+cmake-build-debug/
+cmake-build-release/
+
