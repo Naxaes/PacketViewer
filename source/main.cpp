@@ -1,15 +1,15 @@
 #include "error.cpp"
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include <cstdint>
+#include <cstdlib>
+#include <cstdio>
 
-#include <math.h>
+#include <cmath>
 
 #include <unistd.h>
 #include <fcntl.h>          // open, O_RDWR
-#include <string.h>
-#include <errno.h>
+#include <cstring>
+#include <cerrno>
 
 #include <getopt.h>
 
@@ -65,7 +65,7 @@ struct Rule
     {
         Item     item;
         uint64_t value;
-        Pair*    next = 0;
+        Pair*    next = nullptr;  // TODO(ted): Make a std::optional.
     };
 
     Action action;
@@ -74,7 +74,7 @@ struct Rule
 
 struct Filter
 {
-    Rule*  rules;
+    Rule*  rules;  // TODO(ted): How is this initialized?
     size_t count;
 
     Rule::Action default_action = Rule::DISCARD;
@@ -130,8 +130,8 @@ Packet ReadPacket(Device& device, Filter filter, Options options)
 
 
     // EXTRACT HEADERS NEEDED TO FILTER
-    Ethernet * const ethernet_header  = (Ethernet * const) (device.packet_pointer + bpf_header_size);                                                     // Move past the bpf header.
-    IPv4     * const ipv4_header      = (IPv4     * const) (device.packet_pointer + bpf_header_size + sizeof(Ethernet));                                  // Move to network header.
+    Ethernet * const ethernet_header  = (Ethernet * const) (device.packet_pointer + bpf_header_size);                                                      // Move past the bpf header.
+    IPv4     * const ipv4_header      = (IPv4     * const) (device.packet_pointer + bpf_header_size + sizeof(Ethernet));                                   // Move to network header.
     uint8_t  * const transport_header = (uint8_t  * const) (device.packet_pointer + bpf_header_size + sizeof(Ethernet) + ipv4_header->header_length * 4);  // Move to transport header.
 
 
@@ -147,7 +147,7 @@ Packet ReadPacket(Device& device, Filter filter, Options options)
 
         // CHECK IF RULE (AND NESTED RULES) MATCHES.
         bool match = true;
-        while (pair != 0)
+        while (pair != nullptr)
         {
             if      (pair->item == Rule::MAC_SRC_ADDRESS    &&  pair->value == HardwareByteOrder(ethernet_header->source_mac_address)      )  { pair = pair->next; }
             else if (pair->item == Rule::MAC_DST_ADDRESS    &&  pair->value == HardwareByteOrder(ethernet_header->destination_mac_address) )  { pair = pair->next; }
@@ -399,7 +399,6 @@ bool ParseArguments(int argc, char * const * argv)
     if (argc <= 1)
         return true;
 
-    FILE* file;
     char  buffer[1024] = { 0 };
     char* pointer = buffer;
 
@@ -590,7 +589,7 @@ bool ParseArguments(int argc, char * const * argv)
     }
 
     // ADD RULE TO RULE LIST
-    file = fopen("rules.ted", "a");
+    FILE* file = fopen("rules.ted", "a");
     if (!file)
     {
         fprintf(stderr, "Couldn't create rules file.\n");
@@ -613,16 +612,6 @@ int main(int argc, char* argv[])
 
     if (!continue_)
         return 1;
-
-//    MacAddress address1 = {1, 2, 3, 4, 5, 6};
-//    MacAddress address2 = uint64_t(0x060504030201);
-//    MacAddress address3 = {6, 5, 4, 3, 2, 1};
-//
-//    ASSERT(address1 == address2, "no");
-//    ASSERT(address2 != address3, "no");
-//    ASSERT(address1 == uint64_t(0x060504030201), "no");
-//    ASSERT(address3 != uint64_t(0x060504030201), "no");
-
 
     Device device = LoadDevice();
     device.buffer = (uint8_t *) malloc(device.required_buffer_size);

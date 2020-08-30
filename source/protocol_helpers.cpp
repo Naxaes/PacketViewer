@@ -61,7 +61,7 @@ uint8_t* NextHeader(const TCP* header)
 
 size_t GetOptionsSize(const TCP* header)
 {
-    size_t   size = header->data_offset * 4 - sizeof(TCP);
+    size_t size = header->data_offset * 4 - sizeof(TCP);
     return size;
 }
 

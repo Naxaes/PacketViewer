@@ -1,3 +1,6 @@
+#include <array>
+#include <string>
+
 #define COLOR_BLACK   "\u001b[30m"
 #define COLOR_RED     "\u001b[31m"
 #define COLOR_GREEN   "\u001b[32m"
@@ -112,9 +115,7 @@ static char const * const UNKNOWN_STRING_TEMPLATE = \
     "| - Unknown Protocol %04X\n";
 
 
-
-// ---- PRIVATE FUNCTION ----
-Buffer FormatBufferForPrinting(const Buffer payload);
+std::string FormatBufferForPrinting(Buffer payload);
 
 
 char* BinaryFormat(uint16_t value, uint8_t count = 16)
@@ -179,7 +180,7 @@ void Output(const Ethernet* header, FILE* file = stdout)
 }
 void OutputVerbose(const Ethernet* header, FILE* file = stdout)
 {
-    static const size_t mac_address_size = sizeof("00:00:00:00:00:00");
+    constexpr size_t mac_address_size = sizeof("00:00:00:00:00:00");
     char mac_dest_buffer[mac_address_size];
     char mac_src_buffer[mac_address_size];
 
@@ -271,9 +272,9 @@ void Output(const Buffer header, FILE* file = stdout)
 }
 void OutputVerbose(const Buffer header, FILE* file = stdout)
 {
-    Buffer formatted_buffer = FormatBufferForPrinting(header);
+    std::string formatted_buffer = FormatBufferForPrinting(header);
     fprintf(file, PAYLOAD_STRING_TEMPLATE, payload_color, COLOR_RESET);
-    fprintf(file, "\t%.*s\n", (int)formatted_buffer.size, formatted_buffer.data);
+    fprintf(file, "\t%.*s\n", (int)formatted_buffer.size(), formatted_buffer.data());
 }
 
 
@@ -287,144 +288,91 @@ void OutputUnknownProtocol(uint8_t protocol, FILE* file = stdout)
 }
 
 
-void OutputPacketInRawHex(Ethernet const * start, size_t end, size_t characters_per_row = 16, FILE* file = stdout)
+class Cursor
 {
-    ASSERT(end < Ethernet::MAX_TOTAL_SIZE, "Packet (%zu bytes) bigger than maximum ethernet size (%u).", end, Ethernet::MAX_TOTAL_SIZE);
+public:
+    size_t row    = 0;
+    size_t column = 0;
 
-    uint32_t line  = 0;
-    uint32_t character_on_current_line = 0;
-    const uint8_t* base  = (const uint8_t *) start;
-
-    fprintf(file, "%u\t", line++);
-
-    for (uint32_t i = 0; i < end; ++i)
+    void advance() const noexcept
     {
-        fprintf(file, "%02X ", base[i]);
+    }
+};
 
-        if (character_on_current_line == 7)  // Seperate in bytes by small space.
-            fprintf(file, "  ");
-
-        if (character_on_current_line >= characters_per_row - 1 && i < end)
+void OutputInHex(uint8_t const * const array, size_t count, Cursor& cursor, const char* color, FILE* file = stdout)
+{
+    fprintf(file, "%s", color);  // TODO(ted): Potentially insecure.
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (cursor.column == 0)
         {
-            fprintf(file, "\n%u\t", line++);
-            character_on_current_line = 0;
+            fprintf(file, "%s%zi.\t%s%02X", COLOR_RESET, cursor.row+1, color, array[i]);
+            cursor.column += 1;
+        }
+        else if (cursor.column == 8)
+        {
+            fprintf(file, "   %02X", array[i]);
+            cursor.column += 1;
+        }
+        else if (cursor.column == 15)
+        {
+            cursor.column = 0;
+            cursor.row   += 1;
+
+            fprintf(file, " %02X\n", array[i]);
         }
         else
         {
-            ++character_on_current_line;
+            fprintf(file, " %02X", array[i]);
+            cursor.column += 1;
         }
     }
-    fprintf(file, "%s\n", COLOR_RESET);
+    fprintf(file, COLOR_RESET);
 }
 
 
-// Such hardcoding... But it works!
 void OutputPacketInHex(Ethernet const * const ethernet, FILE* file = stdout)
 {
-    uint8_t * pointer = (uint8_t *) calloc(1, sizeof(Ethernet));
-    ethernet->ReadAsByteArray(pointer);
+    Cursor cursor;
 
-    fprintf(file, 
-        "1.\t%s%02X %02X %02X %02X %02X %02X %02X %02X   %02X %02X %02X %02X %02X %02X %s", ethernet_color, 
-        pointer[0], pointer[1], pointer[2],  pointer[3],  pointer[4],  pointer[5], pointer[6], pointer[7],
-        pointer[8], pointer[9], pointer[10], pointer[11], pointer[12], pointer[13],
-        COLOR_RESET
-    );
+    std::array<uint8_t, 14> ethernet_array = ethernet->ReadAsByteArray();
+    OutputInHex(ethernet_array.data(), ethernet_array.size(), cursor, ethernet_color, file);
 
     if (ethernet->protocol == NETWORK_PROTOCOL_IPv4)
     {
         IPv4* ipv4_header = (IPv4 *) NextHeader(ethernet);
-        pointer = (uint8_t *) calloc(1, HeaderSize(ipv4_header));
-        ipv4_header->ReadAsByteArray(pointer);
 
-        fprintf(file, 
-            "%s%02X %02X\n%s2.%s\t%02X %02X %02X %02X %02X %02X %02X %02X   %02X %02X %02X %02X %02X %02X %02X %02X\n%s3.%s\t%02X %02X %s", ipv4_color, 
-            pointer[0],  pointer[1],  COLOR_RESET, ipv4_color,  pointer[2],  pointer[3],  pointer[4],  pointer[5],  pointer[6],  pointer[7],
-            pointer[8],  pointer[9],  pointer[10], pointer[11], pointer[12], pointer[13], pointer[14], pointer[15],
-            pointer[16], pointer[17], COLOR_RESET, ipv4_color,  pointer[18], pointer[19],
-            COLOR_RESET
-        );
-        // TODO(ted): We might want to support IPv4 options.
+        std::array<uint8_t, 20> ipv4_header_array = ipv4_header->ReadAsByteArray();
+        OutputInHex(ipv4_header_array.data(), ipv4_header_array.size(), cursor, ipv4_color, file);
 
         if (ipv4_header->protocol == TRANSPORT_PROTOCOL_TCP)
         {
             TCP const * tcp_header = (TCP *) NextHeader(ipv4_header);
-            pointer = (uint8_t *) calloc(1, HeaderSize(tcp_header));
-            tcp_header->ReadAsByteArray(pointer);
 
-            fprintf(file, 
-                "%s%02X %02X %02X %02X %02X %02X   %02X %02X %02X %02X %02X %02X %02X %02X\n%s4.%s\t%02X %02X %02X %02X %02X %02X ", tcp_color, 
-                pointer[0],  pointer[1],  pointer[2],  pointer[3],  pointer[4],  pointer[5],  pointer[6],  pointer[7],
-                pointer[8],  pointer[9],  pointer[10], pointer[11], pointer[12], pointer[13], COLOR_RESET, tcp_color,  pointer[14], pointer[15],
-                pointer[16], pointer[17], pointer[18], pointer[19]
-            );
+            std::array<uint8_t, 20> tcp_header_array = tcp_header->ReadAsByteArray();
+            OutputInHex(tcp_header_array.data(), tcp_header_array.size(), cursor, tcp_color, file);
 
             Buffer options = GetOptions(tcp_header);
-            if (options.size == 0)
-                return;
-
-            size_t current_line = 5;
-            if (options.size > 0)
-            {
-                for (size_t i = 0; i < options.size; ++i)
-                {
-                    if (i == 2 || i == 18 || i == 34)
-                        fprintf(file, "  %02X ", options.data[i]);
-                    else if (i == 10 || i == 26)
-                        fprintf(file, "\n%s%zu.%s\t%02X ", COLOR_RESET, current_line++, tcp_color, options.data[i]);
-                    else
-                        fprintf(file, "%02X ", options.data[i]);
-                }
-            }
+            OutputInHex(options.data, options.size, cursor, tcp_color, file);
 
             uint8_t* payload = NextHeader(tcp_header);
             size_t   size    = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(tcp_header);
 
             if (size > 0)
-            {
-                fprintf(file, "%s", payload_color);
-
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if ((i + 10) % 16 == 0)
-                        fprintf(file, "  %02X ", payload[i]);
-                    else if ((i + 2) % 16 == 0)
-                        fprintf(file, "\n%s%zu.%s\t%02X ", COLOR_RESET, current_line++, payload_color, payload[i]);
-                    else
-                        fprintf(file, "%02X ", payload[i]);
-                }
-            }
+                OutputInHex(payload, size, cursor, payload_color, file);
         }
         else if (ipv4_header->protocol == TRANSPORT_PROTOCOL_UDP)
         {
             UDP* udp_header = (UDP *) NextHeader(ipv4_header);
-            pointer = (uint8_t *) calloc(1, HeaderSize(udp_header));
-            udp_header->ReadAsByteArray(pointer);
+            std::array<uint8_t, 8> udp_header_array = udp_header->ReadAsByteArray();
 
-            fprintf(file, 
-                "%s%02X %02X %02X %02X %02X %02X   %02X %02X ", udp_color, 
-                pointer[0],  pointer[1],  pointer[2],  pointer[3],  pointer[4],  pointer[5],  pointer[6],  pointer[7]
-            );
-
-            size_t current_line = 4;
+            OutputInHex(udp_header_array.data(), udp_header_array.size(), cursor, udp_color, file);
 
             uint8_t* payload = NextHeader(udp_header);
             size_t   size    = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(udp_header);
 
             if (size > 0)
-            {
-                fprintf(file, "%s", payload_color);
-
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if ((i + 10) % 16 == 0)
-                        fprintf(file, "\n%s%zu.%s\t%02X ", COLOR_RESET, current_line++, payload_color, payload[i]);
-                    else if ((i + 2) % 16 == 0)
-                        fprintf(file, "  %02X ", payload[i]);
-                    else
-                        fprintf(file, "%02X ", payload[i]);
-                }
-            }
+                OutputInHex(payload, size, cursor, payload_color, file);
         }
         else
         {
@@ -434,14 +382,8 @@ void OutputPacketInHex(Ethernet const * const ethernet, FILE* file = stdout)
     else if (ethernet->protocol == NETWORK_PROTOCOL_ARP)
     {
         ARP* arp_header = (ARP *) NextHeader(ethernet);
-        uint8_t const * pointer = (uint8_t const *) arp_header;
-
-        fprintf(file, 
-            "%s%02X %02X\n%s2.%s\t%02X %02X %02X %02X %02X %02X %02X %02X   %02X %02X %02X %02X %02X %02X %02X %02X\n%s3.%s\t%02X %02X %02X %02X %02X %02X ", arp_color, 
-            pointer[0],  pointer[1],  COLOR_RESET, arp_color,   pointer[2],  pointer[3],  pointer[4],  pointer[5],  pointer[6],  pointer[7],
-            pointer[8],  pointer[9],  pointer[10], pointer[11], pointer[12], pointer[13], pointer[14], pointer[15],
-            pointer[16], pointer[17], COLOR_RESET, arp_color,   pointer[18], pointer[19], pointer[20], pointer[21], pointer[22], pointer[23]
-        );
+        uint8_t const * array = (uint8_t const *) arp_header;
+        OutputInHex(array, 24, cursor, arp_color, file);
     }
     else if (ethernet->protocol == NETWORK_PROTOCOL_IPv6)
     {
@@ -452,62 +394,58 @@ void OutputPacketInHex(Ethernet const * const ethernet, FILE* file = stdout)
         
     }
 
-    fprintf(file, "%s\n", COLOR_RESET);
+    fprintf(file, "\n");
 }
 
 // ---- PRIVATE FUNCTION ----
 // Result has to be used immediately. Not thread-safe. Truncates if message is to large.
-Buffer FormatBufferForPrinting(const Buffer payload)
+std::string FormatBufferForPrinting(const Buffer payload)
 {
     static const size_t maximum_size = 65535;
-    static char  buffer[maximum_size];
-
     ASSERT(payload.size < maximum_size, "Buffer size (%zu bytes) is too large.", payload.size);
+
+    std::string buffer;
 
     size_t characters_per_line = 64;
 
-    size_t character_on_current_line = 0;
+    size_t characters_on_current_line = 0;
     size_t index = 0;
     for (size_t i = 0; i < payload.size; ++i)
     {
-        if (index >= maximum_size)
-            break;
-
-        if (character_on_current_line >= 64)
+        if (characters_on_current_line >= 64)
         {
-            buffer[index++] = '\n';
-            buffer[index++] = '\t';
-            character_on_current_line = 0;
+            buffer.push_back('\n');
+            buffer.push_back('\t');
+            characters_on_current_line = 0;
         }
 
         if (payload.data[i] < 32 || payload.data[i] == 127)  // Assuming ASCII
         {
             if (payload.data[i] == '\t')
             {
-                buffer[index++] = payload.data[i];
-                character_on_current_line += 4;
+                buffer.push_back('\t');
+                characters_on_current_line += 4;
             }
             else if (payload.data[i] == '\n')
             {
-                buffer[index++] = payload.data[i];
-                buffer[index++] = '\t';
+                buffer.push_back('\n');
+                buffer.push_back('\t');  // We want to indent the whole payload.
+                characters_on_current_line = 0;
             }
             else
             {
-                buffer[index++] = '.';
-                ++character_on_current_line;
+                buffer.push_back('.');
+                ++characters_on_current_line;
             }
         }
         else
         {
-            buffer[index++] = payload.data[i];
-            ++character_on_current_line;
+            buffer.push_back(payload.data[i]);
+            ++characters_on_current_line;
         }
     }
 
-
-
-    return { reinterpret_cast<uint8_t*>(buffer), index };
+    return buffer;
 }
 
 void OutputPacketRecursivelyVerbose(const Ethernet* ethernet, size_t packet_size, size_t packet_count, bool include_binary = false, FILE* file = stdout)
@@ -538,7 +476,7 @@ void OutputPacketRecursivelyVerbose(const Ethernet* ethernet, size_t packet_size
             OutputVerbose(udp_header, file);
 
             uint8_t* payload = NextHeader(udp_header);
-            int size = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(udp_header);
+            size_t size = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(udp_header);
 
             if (size > 0)
                 OutputVerbose({ payload, size_t(size) }, file);
@@ -585,3 +523,35 @@ void OutputPacketRecursivelyVerbose(const Ethernet* ethernet, size_t packet_size
 
 
 
+
+// ---- NOT USED ANYMORE ----
+
+void OutputPacketInRawHex(Ethernet const * start, size_t end, size_t characters_per_row = 16, FILE* file = stdout)
+{
+    ASSERT(end < Ethernet::MAX_TOTAL_SIZE, "Packet (%zu bytes) bigger than maximum ethernet size (%u).", end, Ethernet::MAX_TOTAL_SIZE);
+
+    uint32_t line  = 0;
+    uint32_t character_on_current_line = 0;
+    const uint8_t* base  = (const uint8_t *) start;
+
+    fprintf(file, "%u\t", line++);
+
+    for (uint32_t i = 0; i < end; ++i)
+    {
+        fprintf(file, "%02X ", base[i]);
+
+        if (character_on_current_line == 7)  // Separate in bytes by small space.
+            fprintf(file, "  ");
+
+        if (character_on_current_line >= characters_per_row - 1 && i < end)
+        {
+            fprintf(file, "\n%u\t", line++);
+            character_on_current_line = 0;
+        }
+        else
+        {
+            ++character_on_current_line;
+        }
+    }
+    fprintf(file, "%s\n", COLOR_RESET);
+}

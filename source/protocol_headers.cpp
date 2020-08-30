@@ -1,3 +1,5 @@
+#include <array>
+
 // Everything will be converted to big endianness just before sending, if needed.
 // Bit fields are reorganized by macros.
 
@@ -140,22 +142,24 @@ struct Ethernet
     static const uint16_t MAX_TOTAL_SIZE   = ETHER_MAX_LEN;  // 1518
     static const uint16_t MAX_PAYLOAD_SIZE = MAX_TOTAL_SIZE - HEADER_SIZE;
 
-    void ReadAsByteArray(uint8_t * const buffer) const noexcept
+    std::array<uint8_t, 14> ReadAsByteArray() const noexcept
     {
-        buffer[0]  = destination_mac_address.data[0];
-        buffer[1]  = destination_mac_address.data[1];
-        buffer[2]  = destination_mac_address.data[2];
-        buffer[3]  = destination_mac_address.data[3];
-        buffer[4]  = destination_mac_address.data[4];
-        buffer[5]  = destination_mac_address.data[5];
-        buffer[6]  = source_mac_address.data[0];
-        buffer[7]  = source_mac_address.data[1];
-        buffer[8]  = source_mac_address.data[2];
-        buffer[9]  = source_mac_address.data[3];
-        buffer[10] = source_mac_address.data[4];
-        buffer[11] = source_mac_address.data[5];
-        buffer[12] = uint8_t(protocol >> 8);
-        buffer[13] = uint8_t(protocol >> 0);
+        return {
+                destination_mac_address.data[0],
+                destination_mac_address.data[1],
+                destination_mac_address.data[2],
+                destination_mac_address.data[3],
+                destination_mac_address.data[4],
+                destination_mac_address.data[5],
+                source_mac_address.data[0],
+                source_mac_address.data[1],
+                source_mac_address.data[2],
+                source_mac_address.data[3],
+                source_mac_address.data[4],
+                source_mac_address.data[5],
+                uint8_t(protocol >> 8),
+                uint8_t(protocol >> 0),
+        };
     }
 
     MacAddress destination_mac_address;
@@ -172,12 +176,12 @@ struct Ethernet
 struct ARP
 {
     
-};
+} __attribute__((packed));
 
 struct IPv6
 {
     
-};
+} __attribute__((packed));
 
 
 // https://tools.ietf.org/html/rfc791
@@ -187,28 +191,30 @@ struct IPv4
     static const uint16_t MAX_TOTAL_SIZE   = 65535;
     static const uint16_t MAX_PAYLOAD_SIZE = MAX_TOTAL_SIZE - HEADER_SIZE;
 
-    void ReadAsByteArray(uint8_t * const buffer) const noexcept
+    std::array<uint8_t, 20> ReadAsByteArray() const noexcept
     {
-        buffer[0]  = (version << 4) | (header_length << 0);
-        buffer[1]  = (precedence << 5) | (delay << 4) | (througput << 3) | (reliability << 2) | (reserved1 << 0);
-        buffer[2]  = uint8_t(total_length >> 8);
-        buffer[3]  = uint8_t(total_length);
-        buffer[4]  = uint8_t(identification >> 8);
-        buffer[5]  = uint8_t(identification);
-        buffer[6]  = uint8_t(fragment_offset);
-        buffer[7]  = (reserved1 << 7) | (DF << 6) | (MF << 5) | (uint8_t(fragment_offset >> 8));
-        buffer[8]  = time_to_live;
-        buffer[9]  = protocol;
-        buffer[10] = uint8_t(header_checksum >> 8);
-        buffer[11] = uint8_t(header_checksum >> 0);
-        buffer[12] = uint8_t(source_address >> 24);
-        buffer[13] = uint8_t(source_address >> 16);
-        buffer[14] = uint8_t(source_address >> 8);
-        buffer[15] = uint8_t(source_address >> 0);
-        buffer[16] = uint8_t(destination_address >> 24);
-        buffer[17] = uint8_t(destination_address >> 16);
-        buffer[18] = uint8_t(destination_address >> 8);
-        buffer[19] = uint8_t(destination_address >> 0);
+        return {
+            uint8_t((version << 4) | (header_length << 0)),
+            uint8_t((precedence << 5) | (delay << 4) | (througput << 3) | (reliability << 2) | (reserved1 << 0)),
+            uint8_t(total_length >> 8),
+            uint8_t(total_length),
+            uint8_t(identification >> 8),
+            uint8_t(identification),
+            uint8_t(fragment_offset),
+            uint8_t((reserved1 << 7) | (DF << 6) | (MF << 5) | (uint8_t(fragment_offset >> 8))),
+            time_to_live,
+            protocol,
+            uint8_t(header_checksum >> 8),
+            uint8_t(header_checksum >> 0),
+            uint8_t(source_address >> 24),
+            uint8_t(source_address >> 16),
+            uint8_t(source_address >> 8),
+            uint8_t(source_address >> 0),
+            uint8_t(destination_address >> 24),
+            uint8_t(destination_address >> 16),
+            uint8_t(destination_address >> 8),
+            uint8_t(destination_address >> 0),
+        };
     }
 
 
@@ -274,16 +280,18 @@ struct UDP
     static const uint16_t MAX_TOTAL_SIZE   = 65535;
     static const uint16_t MAX_PAYLOAD_SIZE = MAX_TOTAL_SIZE - HEADER_SIZE - IPv4::HEADER_SIZE;
 
-    void ReadAsByteArray(uint8_t * const buffer) const noexcept
+    std::array<uint8_t, 8> ReadAsByteArray() const noexcept
     {
-        buffer[0]  = uint8_t(source_port >> 8);
-        buffer[1]  = uint8_t(source_port >> 0);
-        buffer[2]  = uint8_t(destination_port >> 8);
-        buffer[3]  = uint8_t(destination_port >> 0);
-        buffer[4]  = uint8_t(length >> 8);
-        buffer[5]  = uint8_t(length >> 0);
-        buffer[6]  = uint8_t(checksum >> 8);
-        buffer[7]  = uint8_t(checksum >> 0);
+        return {
+            uint8_t(source_port >> 8),
+            uint8_t(source_port >> 0),
+            uint8_t(destination_port >> 8),
+            uint8_t(destination_port >> 0),
+            uint8_t(length >> 8),
+            uint8_t(length >> 0),
+            uint8_t(checksum >> 8),
+            uint8_t(checksum >> 0),
+        };
     }
 
     uint16_t source_port;       // Port number of the application on the host sending the data.
@@ -305,28 +313,30 @@ struct TCP
     static const uint16_t MAX_PAYLOAD_SIZE  = MAX_TOTAL_SIZE - HEADER_SIZE - IPv4::HEADER_SIZE;
 
 
-    void ReadAsByteArray(uint8_t * const buffer) const noexcept
+    std::array<uint8_t, 20> ReadAsByteArray() const noexcept
     {
-        buffer[0]  = uint8_t(source_port >> 8);
-        buffer[1]  = uint8_t(source_port >> 0);
-        buffer[2]  = uint8_t(destination_port >> 8);
-        buffer[3]  = uint8_t(destination_port >> 0);
-        buffer[4]  = uint8_t(sequence_number >> 24);
-        buffer[5]  = uint8_t(sequence_number >> 16);
-        buffer[6]  = uint8_t(sequence_number >> 8);
-        buffer[7]  = uint8_t(sequence_number >> 0);
-        buffer[8]  = uint8_t(acknowledgment_number >> 24);
-        buffer[9]  = uint8_t(acknowledgment_number >> 16);
-        buffer[10] = uint8_t(acknowledgment_number >> 8);
-        buffer[11] = uint8_t(acknowledgment_number >> 0);
-        buffer[12] = uint8_t((data_offset << 4) | (reserved << 1) | (flag_ns << 0));
-        buffer[13] = uint8_t((flag_cwr << 7) | (flag_ece << 6) | (flag_urg << 5) | (flag_ack << 4) | (flag_psh << 3) | (flag_rst << 2) | (flag_syn << 1) | (flag_fin << 0));
-        buffer[14] = uint8_t(window_size >> 8);
-        buffer[15] = uint8_t(window_size >> 0);
-        buffer[16] = uint8_t(checksum >> 8);
-        buffer[17] = uint8_t(checksum >> 0);
-        buffer[18] = uint8_t(urgent >> 8);
-        buffer[19] = uint8_t(urgent >> 0);
+        return {
+            uint8_t(source_port >> 8),
+            uint8_t(source_port >> 0),
+            uint8_t(destination_port >> 8),
+            uint8_t(destination_port >> 0),
+            uint8_t(sequence_number >> 24),
+            uint8_t(sequence_number >> 16),
+            uint8_t(sequence_number >> 8),
+            uint8_t(sequence_number >> 0),
+            uint8_t(acknowledgment_number >> 24),
+            uint8_t(acknowledgment_number >> 16),
+            uint8_t(acknowledgment_number >> 8),
+            uint8_t(acknowledgment_number >> 0),
+            uint8_t((data_offset << 4) | (reserved << 1) | (flag_ns << 0)),
+            uint8_t((flag_cwr << 7) | (flag_ece << 6) | (flag_urg << 5) | (flag_ack << 4) | (flag_psh << 3) | (flag_rst << 2) | (flag_syn << 1) | (flag_fin << 0)),
+            uint8_t(window_size >> 8),
+            uint8_t(window_size >> 0),
+            uint8_t(checksum >> 8),
+            uint8_t(checksum >> 0),
+            uint8_t(urgent >> 8),
+            uint8_t(urgent >> 0),
+        };
     }
 
 

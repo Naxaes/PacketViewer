@@ -13,6 +13,6 @@ else
     COMPILER_FLAGS="${COMPILER_FLAGS} ${COMPILER_FLAGS_FAST}"
 fi
 
-
+mkdir -p "build"
 clang++ ${COMPILER_FLAGS} ${IGNORED_WARNINGS} "./source/main.cpp" -o ./build/ted
 
