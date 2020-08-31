@@ -1,6 +1,8 @@
 
 
 
+//    static_assert(sizeof(MacAddress) == Ethernet::ADDRESS_SIZE, "Not 6");
+
 //    MacAddress address1 = {1, 2, 3, 4, 5, 6};
 //    MacAddress address2 = uint64_t(0x060504030201);
 //    MacAddress address3 = {6, 5, 4, 3, 2, 1};

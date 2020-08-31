@@ -4,8 +4,6 @@
 #include <cstdlib>
 #include <cstdio>
 
-#include <cmath>
-
 #include <unistd.h>
 #include <fcntl.h>          // open, O_RDWR
 #include <cstring>
@@ -14,7 +12,6 @@
 #include <getopt.h>
 
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <sys/ioctl.h>      // ioctl
 #include <sys/uio.h>
 
@@ -22,14 +19,9 @@
 #include <net/ethernet.h>
 #include <net/bpf.h>
 
-#include <arpa/inet.h>
-
 #include "protocol_headers.cpp"
 #include "protocol_helpers.cpp"
 #include "protocol_output.cpp"
-
-static_assert(sizeof(MacAddress) == Ethernet::ADDRESS_SIZE, "Not 6");
-
 
 
 
@@ -39,6 +31,12 @@ static_assert(sizeof(MacAddress) == Ethernet::ADDRESS_SIZE, "Not 6");
 
 static char const * const DEFAULT_RULES_PATH = "rules.ted";
 static char const * const USAGE_HELP_PATH    = "usage.txt";
+
+
+//{ "en0" };  // lo0 - loopback, en1 - Wifi.
+static const char INTERFACE_EN0[] = "en0";
+static const char INTERFACE_EN1[] = "en1";
+static const char INTERFACE_LO0[] = "lo0";
 
 
 // How do we make it easy to specify OR and AND between rules?
@@ -65,7 +63,7 @@ struct Rule
     {
         Item     item;
         uint64_t value;
-        Pair*    next = nullptr;  // TODO(ted): Make a std::optional.
+        Pair*    next = nullptr;  // TODO(ted): Maybe make a std::optional?
     };
 
     Action action;
@@ -74,7 +72,7 @@ struct Rule
 
 struct Filter
 {
-    Rule*  rules;  // TODO(ted): How is this initialized?
+    Rule*  rules;
     size_t count;
 
     Rule::Action default_action = Rule::DISCARD;
@@ -95,8 +93,6 @@ struct Device
 
     uint8_t* packet_pointer;
     uint8_t* end_of_recorded_buffer;
-
-    size_t   packet_count;
 };
 
 struct Packet
@@ -106,10 +102,10 @@ struct Packet
 };
 
 
-
-
-Packet ReadPacket(Device& device, Filter filter, Options options)
+Packet ReadPacket(Device& device, Filter filter, Options options, size_t packet_count)
 {
+    // TODO(ted): Put this if-statement in a new function and allocate new memory for each packet.
+    //   That would allow us to put this into a new thread and throw the packets into a queue.
     if (device.packet_pointer >= device.end_of_recorded_buffer)
     {
         // Record another buffer.
@@ -170,7 +166,7 @@ Packet ReadPacket(Device& device, Filter filter, Options options)
                 FormatToHardware(ethernet_header);
 
             if (rule.action == Rule::LOG)
-                OutputPacketRecursivelyVerbose(ethernet_header, bpf_payload_size, ++device.packet_count, true, options.log_file);
+                OutputPacketRecursivelyVerbose(ethernet_header, bpf_payload_size, packet_count, true, options.log_file);
 
             if (rule.action == Rule::ACCEPT || rule.action == Rule::LOG)
                 return { (uint8_t *) ethernet_header, bpf_payload_size };
@@ -187,7 +183,7 @@ Packet ReadPacket(Device& device, Filter filter, Options options)
         FormatToHardware(ethernet_header);
 
     if (filter.default_action == Rule::LOG)
-        OutputPacketRecursivelyVerbose(ethernet_header, bpf_payload_size, ++device.packet_count, true, options.log_file);
+        OutputPacketRecursivelyVerbose(ethernet_header, bpf_payload_size, packet_count, true, options.log_file);
 
     if (filter.default_action == Rule::ACCEPT || filter.default_action == Rule::LOG)
         return { (uint8_t *) ethernet_header, bpf_payload_size };
@@ -197,7 +193,7 @@ Packet ReadPacket(Device& device, Filter filter, Options options)
 }
 
 
-Device LoadDevice() 
+Device LoadDevice()
 {
      // ---- Try open the next available bpf device. ----
     int fd = 0;
@@ -266,7 +262,7 @@ Device LoadDevice()
     ASSERT(ioctl(fd, BIOCSHDRCMPLT, &dont_fill_mac) >= 0, "Call to 'ioctl' failed. Reason: '%s.'\n", strerror(errno));
 
 
-    return { fd, 0, required_buffer_size, 0, 0, 0 };
+    return {fd, static_cast<uint8_t*>(malloc(required_buffer_size)), required_buffer_size, nullptr, nullptr };
 }
 
 bool ParseArgumentAction(const char* argument, Rule::Action& output)
@@ -614,7 +610,6 @@ int main(int argc, char* argv[])
         return 1;
 
     Device device = LoadDevice();
-    device.buffer = (uint8_t *) malloc(device.required_buffer_size);
 
     ASSERT(device.fd != -1, "An error happened...");
 
@@ -847,9 +842,11 @@ int main(int argc, char* argv[])
 
 
     bool running = true;
+    size_t packet_count = 0;
     while (running)
     {
-        Packet packet = ReadPacket(device, filter, options);
+        ++packet_count;
+        Packet packet = ReadPacket(device, filter, options, packet_count);
     }
 
     return 0;

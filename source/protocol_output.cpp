@@ -294,108 +294,219 @@ public:
     size_t row    = 0;
     size_t column = 0;
 
-    void advance() const noexcept
+    void advance() noexcept
     {
+        if (this->column == 15)
+        {
+            this->column = 0;
+            this->row   += 1;
+        }
+        else
+        {
+            this->column += 1;
+        }
     }
 };
 
 void OutputInHex(uint8_t const * const array, size_t count, Cursor& cursor, const char* color, FILE* file = stdout)
 {
-    fprintf(file, "%s", color);  // TODO(ted): Potentially insecure.
+    fprintf(file, "%s", color);  // TODO(ted): Potentially insecure. Size of 'color' is unknown.
     for (size_t i = 0; i < count; ++i)
     {
         if (cursor.column == 0)
-        {
             fprintf(file, "%s%zi.\t%s%02X", COLOR_RESET, cursor.row+1, color, array[i]);
-            cursor.column += 1;
-        }
         else if (cursor.column == 8)
-        {
             fprintf(file, "   %02X", array[i]);
-            cursor.column += 1;
-        }
         else if (cursor.column == 15)
-        {
-            cursor.column = 0;
-            cursor.row   += 1;
-
             fprintf(file, " %02X\n", array[i]);
-        }
         else
-        {
             fprintf(file, " %02X", array[i]);
-            cursor.column += 1;
-        }
+
+        cursor.advance();
     }
     fprintf(file, COLOR_RESET);
 }
 
 
-void OutputPacketInHex(Ethernet const * const ethernet, FILE* file = stdout)
+
+struct HexOutputVisitor
 {
     Cursor cursor;
+    FILE* file;
 
-    std::array<uint8_t, 14> ethernet_array = ethernet->ReadAsByteArray();
-    OutputInHex(ethernet_array.data(), ethernet_array.size(), cursor, ethernet_color, file);
-
-    if (ethernet->protocol == NETWORK_PROTOCOL_IPv4)
+    HexOutputVisitor(FILE* file = stdout) : file(file) {};
+    ~HexOutputVisitor()
     {
-        IPv4* ipv4_header = (IPv4 *) NextHeader(ethernet);
+        if (cursor.column != 0)
+            fprintf(file, "\n");
+    }
 
-        std::array<uint8_t, 20> ipv4_header_array = ipv4_header->ReadAsByteArray();
+    void visit(const Ethernet& header)
+    {
+        std::array<uint8_t, 14> ethernet_array = header.ReadAsByteArray();
+        OutputInHex(ethernet_array.data(), ethernet_array.size(), cursor, ethernet_color, file);
+    }
+    void visit(const IPv4& header)
+    {
+        std::array<uint8_t, 20> ipv4_header_array = header.ReadAsByteArray();
         OutputInHex(ipv4_header_array.data(), ipv4_header_array.size(), cursor, ipv4_color, file);
+    }
+    void visit(const IPv6& header)
+    {
+
+    }
+    void visit(const ARP& header)
+    {
+        uint8_t const * array = (uint8_t const *) &header;
+        OutputInHex(array, 24, cursor, arp_color, file);
+    }
+    void visit(const TCP& header, Buffer options)
+    {
+        std::array<uint8_t, 20> tcp_header_array = header.ReadAsByteArray();
+        OutputInHex(tcp_header_array.data(), tcp_header_array.size(), cursor, tcp_color, file);
+        OutputInHex(options.data, options.size, cursor, tcp_color, file);
+    }
+    void visit(const UDP& header)
+    {
+        std::array<uint8_t, 8> udp_header_array = header.ReadAsByteArray();
+        OutputInHex(udp_header_array.data(), udp_header_array.size(), cursor, udp_color, file);
+    }
+    void visit(const Buffer& payload)
+    {
+        OutputInHex(payload.data, payload.size, cursor, payload_color, file);
+    }
+    void visit(const uint8_t& payload, size_t size)
+    {
+        OutputInHex(&payload, size, cursor, payload_color, file);
+    }
+};
+
+
+
+struct OutputVisitor
+{
+    Cursor cursor;
+    FILE* file;
+
+    explicit OutputVisitor(FILE* file = stdout) : file(file) {};
+    ~OutputVisitor()
+    {
+        if (cursor.column != 0)
+            fprintf(file, "\n");
+    }
+
+    void visit(const Ethernet& header)
+    {
+        OutputVerbose(&header, file);
+    }
+    void visit(const IPv4& header)
+    {
+        OutputVerbose(&header, file);
+    }
+    void visit(const IPv6& header)
+    {
+        Output(&header);
+    }
+    void visit(const ARP& header)
+    {
+        Output(&header, file);
+    }
+    void visit(const TCP& header, Buffer options)
+    {
+        OutputVerbose(&header, file);
+    }
+    void visit(const UDP& header)
+    {
+        OutputVerbose(&header, file);
+    }
+    void visit(const Buffer& payload)
+    {
+        OutputVerbose(payload, file);
+    }
+    void visit(uint8_t& payload, size_t size)
+    {
+        OutputVerbose(Buffer{&payload, size}, file);
+    }
+};
+
+
+
+template <typename Visitor>
+void TransversePacket(Ethernet& ethernet, Visitor& visitor)
+{
+    visitor.visit(ethernet);
+
+    if (ethernet.protocol == NETWORK_PROTOCOL_IPv4)
+    {
+        IPv4* ipv4_header = (IPv4 *) NextHeader(&ethernet);
+        visitor.visit(*ipv4_header);
 
         if (ipv4_header->protocol == TRANSPORT_PROTOCOL_TCP)
         {
-            TCP const * tcp_header = (TCP *) NextHeader(ipv4_header);
-
-            std::array<uint8_t, 20> tcp_header_array = tcp_header->ReadAsByteArray();
-            OutputInHex(tcp_header_array.data(), tcp_header_array.size(), cursor, tcp_color, file);
-
-            Buffer options = GetOptions(tcp_header);
-            OutputInHex(options.data, options.size, cursor, tcp_color, file);
+            TCP* tcp_header = (TCP *) NextHeader(ipv4_header);
+            Buffer options  = GetOptions(tcp_header);
+            visitor.visit(*tcp_header, options);
 
             uint8_t* payload = NextHeader(tcp_header);
             size_t   size    = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(tcp_header);
 
             if (size > 0)
-                OutputInHex(payload, size, cursor, payload_color, file);
+                visitor.visit(Buffer{payload, size});
         }
         else if (ipv4_header->protocol == TRANSPORT_PROTOCOL_UDP)
         {
             UDP* udp_header = (UDP *) NextHeader(ipv4_header);
-            std::array<uint8_t, 8> udp_header_array = udp_header->ReadAsByteArray();
-
-            OutputInHex(udp_header_array.data(), udp_header_array.size(), cursor, udp_color, file);
+            visitor.visit(*udp_header);
 
             uint8_t* payload = NextHeader(udp_header);
             size_t   size    = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(udp_header);
 
             if (size > 0)
-                OutputInHex(payload, size, cursor, payload_color, file);
+                visitor.visit(Buffer{payload, size});
         }
         else
         {
-           
+
         }
     }
-    else if (ethernet->protocol == NETWORK_PROTOCOL_ARP)
+    else if (ethernet.protocol == NETWORK_PROTOCOL_ARP)
     {
-        ARP* arp_header = (ARP *) NextHeader(ethernet);
-        uint8_t const * array = (uint8_t const *) arp_header;
-        OutputInHex(array, 24, cursor, arp_color, file);
+        ARP* arp_header = (ARP *) NextHeader(&ethernet);
+        visitor.visit(*arp_header);
     }
-    else if (ethernet->protocol == NETWORK_PROTOCOL_IPv6)
+    else if (ethernet.protocol == NETWORK_PROTOCOL_IPv6)
     {
-        
+
     }
     else
     {
-        
+
+    }
+}
+
+void OutputPacketInHex(Ethernet* const ethernet, FILE* file = stdout)
+{
+    HexOutputVisitor visitor(file);
+    TransversePacket(*ethernet, visitor);
+}
+
+void OutputPacketRecursivelyVerbose(Ethernet* const ethernet, size_t packet_size, size_t packet_count, bool include_binary = false, FILE* file = stdout)
+{
+    fprintf(file, "-------------------------- PACKET %zu [ size %zu ] --------------------------\n", packet_count, packet_size);
+    OutputVisitor visitor(file);
+    TransversePacket(*ethernet, visitor);
+
+    if (include_binary)
+    {
+        fprintf(file, "\n");
+        OutputPacketInHex(ethernet, file);
     }
 
-    fprintf(file, "\n");
+    fprintf(file, "------------------------------------------------------------------------\n");
 }
+
+
+
 
 // ---- PRIVATE FUNCTION ----
 // Result has to be used immediately. Not thread-safe. Truncates if message is to large.
@@ -448,67 +559,69 @@ std::string FormatBufferForPrinting(const Buffer payload)
     return buffer;
 }
 
-void OutputPacketRecursivelyVerbose(const Ethernet* ethernet, size_t packet_size, size_t packet_count, bool include_binary = false, FILE* file = stdout)
-{
-    fprintf(file, "-------------------------- PACKET %zu [ size %zu ] --------------------------\n", packet_count, packet_size);
 
-    OutputVerbose(ethernet, file);
 
-    if (ethernet->protocol == NETWORK_PROTOCOL_IPv4)
-    {
-        IPv4* ipv4_header = (IPv4 *) NextHeader(ethernet);
-        OutputVerbose(ipv4_header, file);
-
-        if (ipv4_header->protocol == TRANSPORT_PROTOCOL_TCP)
-        {
-            TCP* tcp_header = (TCP *) NextHeader(ipv4_header);
-            OutputVerbose(tcp_header, file);
-
-            uint8_t* payload = NextHeader(tcp_header);
-            size_t   size    = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(tcp_header);
-
-            if (size > 0)
-                OutputVerbose({ payload, size }, file);
-        }
-        else if (ipv4_header->protocol == TRANSPORT_PROTOCOL_UDP)
-        {
-            UDP* udp_header = (UDP *) NextHeader(ipv4_header);
-            OutputVerbose(udp_header, file);
-
-            uint8_t* payload = NextHeader(udp_header);
-            size_t size = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(udp_header);
-
-            if (size > 0)
-                OutputVerbose({ payload, size_t(size) }, file);
-        }
-        else
-        {
-            OutputUnknownProtocol(ipv4_header->protocol, file);
-        }
-    }
-    else if (ethernet->protocol == NETWORK_PROTOCOL_ARP)
-    {
-        ARP* arp_header = (ARP *) NextHeader(ethernet);
-        Output(arp_header);
-    }
-    else if (ethernet->protocol == NETWORK_PROTOCOL_IPv6)
-    {
-        IPv6* ipv6_header = (IPv6 *) NextHeader(ethernet);
-        Output(ipv6_header);
-    }
-    else
-    {
-        OutputUnknownProtocol(ethernet->protocol, file);
-    }
-
-    if (include_binary)
-    {
-        fprintf(file, "\n");
-        OutputPacketInHex(ethernet);
-    }
-
-    fprintf(file, "------------------------------------------------------------------------\n");
-}
+//void OutputPacketRecursivelyVerbose(Ethernet* const ethernet, size_t packet_size, size_t packet_count, bool include_binary = false, FILE* file = stdout)
+//{
+//    fprintf(file, "-------------------------- PACKET %zu [ size %zu ] --------------------------\n", packet_count, packet_size);
+//
+//    OutputVerbose(ethernet, file);
+//
+//    if (ethernet->protocol == NETWORK_PROTOCOL_IPv4)
+//    {
+//        IPv4* ipv4_header = (IPv4 *) NextHeader(ethernet);
+//        OutputVerbose(ipv4_header, file);
+//
+//        if (ipv4_header->protocol == TRANSPORT_PROTOCOL_TCP)
+//        {
+//            TCP* tcp_header = (TCP *) NextHeader(ipv4_header);
+//            OutputVerbose(tcp_header, file);
+//
+//            uint8_t* payload = NextHeader(tcp_header);
+//            size_t   size    = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(tcp_header);
+//
+//            if (size > 0)
+//                OutputVerbose({ payload, size }, file);
+//        }
+//        else if (ipv4_header->protocol == TRANSPORT_PROTOCOL_UDP)
+//        {
+//            UDP* udp_header = (UDP *) NextHeader(ipv4_header);
+//            OutputVerbose(udp_header, file);
+//
+//            uint8_t* payload = NextHeader(udp_header);
+//            size_t size = ipv4_header->total_length - HeaderSize(ipv4_header) - HeaderSize(udp_header);
+//
+//            if (size > 0)
+//                OutputVerbose({ payload, size_t(size) }, file);
+//        }
+//        else
+//        {
+//            OutputUnknownProtocol(ipv4_header->protocol, file);
+//        }
+//    }
+//    else if (ethernet->protocol == NETWORK_PROTOCOL_ARP)
+//    {
+//        ARP* arp_header = (ARP *) NextHeader(ethernet);
+//        Output(arp_header);
+//    }
+//    else if (ethernet->protocol == NETWORK_PROTOCOL_IPv6)
+//    {
+//        IPv6* ipv6_header = (IPv6 *) NextHeader(ethernet);
+//        Output(ipv6_header);
+//    }
+//    else
+//    {
+//        OutputUnknownProtocol(ethernet->protocol, file);
+//    }
+//
+//    if (include_binary)
+//    {
+//        fprintf(file, "\n");
+//        OutputPacketInHex(ethernet);
+//    }
+//
+//    fprintf(file, "------------------------------------------------------------------------\n");
+//}
 
 
 
