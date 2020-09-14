@@ -1,0 +1,2 @@
+rule transport-protocol tcp action LOG 
+rule transport-protocol udp action LOG
