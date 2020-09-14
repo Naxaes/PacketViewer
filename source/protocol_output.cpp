@@ -215,7 +215,7 @@ void OutputVerbose(const IPv4* header, FILE* file = stdout)
     IPv4AddressToString(header->destination_address, ipv4_dest_buffer, ipv4_address_size);
 
     fprintf(file, VERBOSE_IPv4_STRING_TEMPLATE, ipv4_color, COLOR_RESET, header->version, 
-        header->header_length, header->precedence, header->delay, header->througput, 
+        header->header_length, header->precedence, header->delay, header->throughput,
         header->reliability, header->reserved1, header->total_length, header->identification, 
         header->reserved2, header->DF, header->MF, header->fragment_offset, header->time_to_live, 
         ProtocolToString(header->protocol), header->header_checksum, ipv4_src_buffer, ipv4_dest_buffer
@@ -343,12 +343,12 @@ struct HexOutputVisitor
 
     void visit(const Ethernet& header)
     {
-        std::array<uint8_t, 14> ethernet_array = header.ReadAsByteArray();
+        std::array<uint8_t, 14> ethernet_array = header.AsByteArray();
         OutputInHex(ethernet_array.data(), ethernet_array.size(), cursor, ethernet_color, file);
     }
     void visit(const IPv4& header)
     {
-        std::array<uint8_t, 20> ipv4_header_array = header.ReadAsByteArray();
+        std::array<uint8_t, 20> ipv4_header_array = header.AsByteArray();
         OutputInHex(ipv4_header_array.data(), ipv4_header_array.size(), cursor, ipv4_color, file);
     }
     void visit(const IPv6& header)

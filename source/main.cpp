@@ -38,6 +38,10 @@ static const char INTERFACE_EN0[] = "en0";
 static const char INTERFACE_EN1[] = "en1";
 static const char INTERFACE_LO0[] = "lo0";
 
+enum class Interface {
+    en0, en1, lo0
+};
+
 
 // How do we make it easy to specify OR and AND between rules?
 struct Rule
@@ -193,7 +197,7 @@ Packet ReadPacket(Device& device, Filter filter, Options options, size_t packet_
 }
 
 
-Device LoadDevice()
+Device LoadDevice(Interface interface = Interface::en0)
 {
      // ---- Try open the next available bpf device. ----
     int fd = 0;
@@ -221,9 +225,25 @@ Device LoadDevice()
     size_t        required_buffer_size     =     0;
     uint32_t      data_link_protocol       =     0;
     ifreq         hardware_interface_name  =   { 0 };
-    ifreq         bound_if                 = { "en0" };  // lo0 - loopback, en1 - Wifi.
     bpf_version   version                  =   { 0 };
-    
+    ifreq         bound_if                 =   { 0 };  // lo0 - loopback, en1 - Wifi.
+
+    switch (interface)
+    {
+        case Interface::en0:
+            memcpy(bound_if.ifr_name, INTERFACE_EN0, sizeof(INTERFACE_EN0));
+            break;
+        case Interface::en1:
+            memcpy(bound_if.ifr_name, INTERFACE_EN1, sizeof(INTERFACE_EN1));
+            break;
+        case Interface::lo0:
+            memcpy(bound_if.ifr_name, INTERFACE_LO0, sizeof(INTERFACE_LO0));
+            break;
+        default:
+            ASSERT(false, "Invalid code path.");
+    }
+
+
     // Bind the descriptor with the interface.
     if (ioctl(fd, BIOCSETIF, &bound_if) == -1)
         ERROR("Call to 'ioctl' failed. Reason: '%s.'.\n"

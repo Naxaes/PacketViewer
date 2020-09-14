@@ -1,5 +1,5 @@
 Name:
-    ted -- TCPdump's Evolved Descendant
+    ted -- TCP/IP Elaborate Display
 
 Usage:
     ted

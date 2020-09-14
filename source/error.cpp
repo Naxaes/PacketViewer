@@ -1,6 +1,6 @@
-#include <stdarg.h>         // va_start, va_end, va_list
-#include <stdlib.h>         // exit
-#include <stdio.h>          // fprintf, vsnprintf, size_t
+#include <cstdarg>         // va_start, va_end, va_list
+#include <cstdlib>         // exit
+#include <cstdio>          // fprintf, vsnprintf, size_t
 
 
 #define ASSERT(expression, ...)                                                      \
